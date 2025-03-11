@@ -9,6 +9,48 @@ let markerData = []; // Array of 8 markers, each with an array of {x, y, z} for 
 let currentSample = 0;
 const maxTrailLength = 240; // maximum number of positions in the trail
 
+  // Add cameras
+  function addCameraIcons() {
+    const numCams = 6;           // Number of camera icons
+    const ringRadius = 1.0;        // Radius of the ring (distance from center)
+    const camHeight = 1.0;       // Height above the arena
+    const camGroup = new THREE.Group();
+    const camScale = 0.5;
+  
+    for (let i = 0; i < numCams; i++) {
+      const angle = i * (2 * Math.PI / numCams);
+      const x = ringRadius * Math.cos(angle);
+      const z = ringRadius * Math.sin(angle);
+      
+      // Create a group for a single camera icon
+      const camIcon = new THREE.Group();
+      
+      // Camera body (wireframe box)
+      const bodyGeom = new THREE.BoxGeometry(0.2*camScale, 0.15*camScale, 0.1*camScale);
+      const bodyMat = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true });
+      const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
+      camIcon.add(bodyMesh);
+      
+      // Camera lens (a small cone)
+      const lensGeom = new THREE.ConeGeometry(0.1*camScale, 0.1*camScale, 20);
+      const lensMat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
+      const lensMesh = new THREE.Mesh(lensGeom, lensMat);
+      // Position the lens at the "front" of the camera (assuming -Z is forward)
+      lensMesh.position.set(0, 0, 0.08*camScale);
+      lensMesh.rotation.x = Math.PI * 3 / 2;
+      camIcon.add(lensMesh);
+      
+      // Position the camera icon in the ring and set its height
+      camIcon.position.set(x, camHeight, z);
+      
+      // Rotate the icon so it faces the center (for a neat effect)
+      camIcon.lookAt(new THREE.Vector3(0, 0, 0));
+      
+      camGroup.add(camIcon);
+    }
+    scene.add(camGroup);
+  }
+
 function init() {
   // Create scene and set background to black
   scene = new THREE.Scene();
@@ -16,7 +58,7 @@ function init() {
 
   // Set up camera
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 1, 3); // slightly elevated for a better view
+  camera.position.set(0.3, 1.2, 1.5); // slightly elevated for a better view
 
   // Set up renderer
   renderer = new THREE.WebGLRenderer();
@@ -34,6 +76,9 @@ function init() {
   const plane = new THREE.Mesh(planeGeo, planeMat);
   plane.rotation.x = -Math.PI / 2; // orient to lie horizontally
   scene.add(plane);
+
+  addCameraIcons();
+
 
   // Load binary marker data files
   Promise.all([
@@ -61,7 +106,7 @@ function init() {
 
       // Create sphere geometry for the marker
       const sphereGeo = new THREE.SphereGeometry(0.01, 16, 16);
-      const sphereMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.75 });
+      const sphereMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
       const sphere = new THREE.Mesh(sphereGeo, sphereMat);
       scene.add(sphere);
       markers.push(sphere);
