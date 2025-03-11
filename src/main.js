@@ -21,6 +21,7 @@ function init() {
   // Set up renderer
   renderer = new THREE.WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
   document.body.appendChild(renderer.domElement);
 
   // Add OrbitControls for mouse interaction (rotate, zoom, pan)
