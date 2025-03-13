@@ -1,6 +1,27 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
+// At the top, after your imports:
+import * as dat from 'dat.gui';
+
+const playbackControls = {
+  restart: function() {
+    currentSample = 0;
+    spikeIndex = 0;
+  },
+  playbackSpeed: 1.0, // multiplier for how quickly currentSample advances
+  currentFrame: 0, // optional: allows jumping to a specific frame
+};
+
+const gui = new dat.GUI();
+gui.add(playbackControls, 'restart').name('Restart Animation');
+gui.add(playbackControls, 'playbackSpeed', 1, 10.0).name('Playback Speed');
+// Optionally, if you want to jump to a specific frame:
+// gui.add(playbackControls, 'currentFrame', 0, 1000).name('Current Frame').onFinishChange(value => {
+//   currentSample = Math.floor(value);
+//   spikeIndex = 0; // reset spikes if needed
+// });
+
 // --- New: Define which neurons to display and assign colors ---
 const SELECTED_NEURONS = [60, 61];  // Change these IDs as needed
 const neuronColors = {};
@@ -260,7 +281,8 @@ function animate() {
       trail.line.geometry.attributes.position.needsUpdate = true;
       trail.line.geometry.attributes.progress.needsUpdate = true;
     });
-    currentSample++;
+    // currentSample++;
+    currentSample += Math.round(playbackControls.playbackSpeed);
   }
 
   // --- Drop Spike Dots ---
