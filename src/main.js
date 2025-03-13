@@ -1,7 +1,18 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-// Global variables
+// --- New: Define which neurons to display and assign colors ---
+const SELECTED_NEURONS = [60, 61];  // Change these IDs as needed
+const neuronColors = {};
+SELECTED_NEURONS.forEach((id, i) => {
+  // For example, assign colors using HSL so that each gets a different hue.
+  const hue = i * (360 / SELECTED_NEURONS.length);
+  const color = new THREE.Color();
+  color.setHSL(hue / 360, 1, 0.5);
+  neuronColors[id] = color;
+});
+
+// Global variables for scene, camera, etc.
 let scene, camera, renderer, controls;
 let markers = [];
 let trails = [];
@@ -9,47 +20,55 @@ let markerData = []; // Array of 8 markers, each with an array of {x, y, z} for 
 let currentSample = 0;
 const maxTrailLength = 240; // maximum number of positions in the trail
 
-  // Add cameras
-  function addCameraIcons() {
-    const numCams = 6;           // Number of camera icons
-    const ringRadius = 1.0;        // Radius of the ring (distance from center)
-    const camHeight = 1.0;       // Height above the arena
-    const camGroup = new THREE.Group();
-    const camScale = 0.5;
-  
-    for (let i = 0; i < numCams; i++) {
-      const angle = i * (2 * Math.PI / numCams);
-      const x = ringRadius * Math.cos(angle);
-      const z = ringRadius * Math.sin(angle);
-      
-      // Create a group for a single camera icon
-      const camIcon = new THREE.Group();
-      
-      // Camera body (wireframe box)
-      const bodyGeom = new THREE.BoxGeometry(0.2*camScale, 0.15*camScale, 0.1*camScale);
-      const bodyMat = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true });
-      const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
-      camIcon.add(bodyMesh);
-      
-      // Camera lens (a small cone)
-      const lensGeom = new THREE.ConeGeometry(0.1*camScale, 0.1*camScale, 20);
-      const lensMat = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true });
-      const lensMesh = new THREE.Mesh(lensGeom, lensMat);
-      // Position the lens at the "front" of the camera (assuming -Z is forward)
-      lensMesh.position.set(0, 0, 0.08*camScale);
-      lensMesh.rotation.x = Math.PI * 3 / 2;
-      camIcon.add(lensMesh);
-      
-      // Position the camera icon in the ring and set its height
-      camIcon.position.set(x, camHeight, z);
-      
-      // Rotate the icon so it faces the center (for a neat effect)
-      camIcon.lookAt(new THREE.Vector3(0, 0, 0));
-      
-      camGroup.add(camIcon);
-    }
-    scene.add(camGroup);
+// New globals for spike data
+let frameTimes = [];      // from frame_times.bin
+let spikeTimes = [];      // from spike_times.bin
+let spikeNeurons = [];    // from spike_neurons.bin
+let rbposData = [];       // from rbpos.bin (rigid body positions)
+let spikeIndex = 0;       // pointer into spikeTimes
+let spikeGroup;           // group to hold spike dots
+
+// --- Camera Icons (existing) ---
+function addCameraIcons() {
+  const numCams = 6;           // Number of camera icons
+  const ringRadius = 1.0;        // Radius of the ring (distance from center)
+  const camHeight = 1.0;       // Height above the arena
+  const camGroup = new THREE.Group();
+  const camScale = 0.5;
+
+  for (let i = 0; i < numCams; i++) {
+    const angle = i * (2 * Math.PI / numCams);
+    const x = ringRadius * Math.cos(angle);
+    const z = ringRadius * Math.sin(angle);
+    
+    // Create a group for a single camera icon
+    const camIcon = new THREE.Group();
+    
+    // Camera body (wireframe box)
+    const bodyGeom = new THREE.BoxGeometry(0.2 * camScale, 0.15 * camScale, 0.1 * camScale);
+    const bodyMat = new THREE.MeshBasicMaterial({ color: 0xff5555, wireframe: true });
+    const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
+    camIcon.add(bodyMesh);
+    
+    // Camera lens (a small cone)
+    const lensGeom = new THREE.ConeGeometry(0.1 * camScale, 0.1 * camScale, 20);
+    const lensMat = new THREE.MeshBasicMaterial({ color: 0xff5555, wireframe: true });
+    const lensMesh = new THREE.Mesh(lensGeom, lensMat);
+    // Position the lens at the "front" of the camera (assuming -Z is forward)
+    lensMesh.position.set(0, 0, 0.08 * camScale);
+    lensMesh.rotation.x = Math.PI * 3 / 2;
+    camIcon.add(lensMesh);
+    
+    // Position the camera icon in the ring and set its height
+    camIcon.position.set(x, camHeight, z);
+    
+    // Rotate the icon so it faces the center (for a neat effect)
+    camIcon.lookAt(new THREE.Vector3(0, 0, 0));
+    
+    camGroup.add(camIcon);
   }
+  scene.add(camGroup);
+}
 
 function init() {
   // Create scene and set background to black
@@ -68,19 +87,22 @@ function init() {
 
   // Add OrbitControls for mouse interaction (rotate, zoom, pan)
   controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true; // for smoother control
+  controls.enableDamping = true; // smoother control
 
   // Add a horizontal wireframe plane at y = 0
   const planeGeo = new THREE.PlaneGeometry(1.5, 1.5, 10, 10);
-  const planeMat = new THREE.MeshBasicMaterial({ color: 0xadd8e6, wireframe: true,  });
+  const planeMat = new THREE.MeshBasicMaterial({ color: 0x555555, wireframe: true });
   const plane = new THREE.Mesh(planeGeo, planeMat);
-  plane.rotation.x = -Math.PI / 2; // orient to lie horizontally
+  plane.rotation.x = -Math.PI / 2; // lie horizontally
   scene.add(plane);
 
   addCameraIcons();
 
+  // Create a group to hold spike dots and add to scene.
+  spikeGroup = new THREE.Group();
+  scene.add(spikeGroup);
 
-  // Load binary marker data files
+  // --- Load Marker Data ---
   Promise.all([
     fetch('./markers8_x.bin').then(r => r.arrayBuffer()).then(buffer => new Float32Array(buffer)),
     fetch('./markers8_y.bin').then(r => r.arrayBuffer()).then(buffer => new Float32Array(buffer)),
@@ -89,11 +111,10 @@ function init() {
     const markersCount = 8;
     const samples = xData.length / markersCount;
 
-    // Reshape binary data: create an array for each marker with its sample positions
+    // Reshape marker data: create an array for each marker with its sample positions
     for (let i = 0; i < markersCount; i++) {
       markerData[i] = [];
       for (let j = 0; j < samples; j++) {
-        // Use this indexing if data is stored row-major ([markers, samples])
         const idx = j * markersCount + i;
         markerData[i].push({ x: xData[idx], y: yData[idx], z: zData[idx] });
       }
@@ -101,7 +122,7 @@ function init() {
 
     // Create marker spheres and their trails
     for (let i = 0; i < markersCount; i++) {
-      // Decide color based on marker group (markers 1-3 white, 4-8 green)
+      // Choose color based on marker group (markers 1-3 white, 4-8 green)
       const color = (i < 3) ? 0xffffff : 0x00ff00;
 
       // Create sphere geometry for the marker
@@ -111,23 +132,20 @@ function init() {
       scene.add(sphere);
       markers.push(sphere);
 
-      // Create a dynamic line for the trail using a custom shader material
+      // Create a dynamic trail using a custom shader material
       const trailGeo = new THREE.BufferGeometry();
-      // Pre-allocate positions for the trail (maxTrailLength points, each with x,y,z)
+      // Pre-allocate positions for the trail (maxTrailLength points)
       const positions = new Float32Array(maxTrailLength * 3);
       trailGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
       // Pre-allocate the progress attribute (one float per vertex)
       const progressArray = new Float32Array(maxTrailLength);
-      // Initialize progress values to 0 (they'll be updated as the trail grows)
       for (let k = 0; k < maxTrailLength; k++) {
         progressArray[k] = 0;
       }
       trailGeo.setAttribute('progress', new THREE.BufferAttribute(progressArray, 1));
 
-      // Create a custom shader material for the trail.
-      // The vertex shader passes the progress attribute to the fragment shader,
-      // and the fragment shader uses it to taper brightness.
+      // Custom shader for trail tapering brightness
       const trailMat = new THREE.ShaderMaterial({
         uniforms: {
           baseColor: { value: new THREE.Color(color) }
@@ -144,7 +162,6 @@ function init() {
           uniform vec3 baseColor;
           varying float vProgress;
           void main() {
-            // Use smoothstep so that brightness ramps from 0 (oldest) to 1 (newest)
             float brightness = smoothstep(0.0, 1.0, vProgress);
             gl_FragColor = vec4(baseColor * brightness, brightness);
           }
@@ -154,16 +171,38 @@ function init() {
         depthTest: false
       });
 
-      // Create the trail line object and add it to the scene.
+      // Create the trail line object
       const trailLine = new THREE.Line(trailGeo, trailMat);
       scene.add(trailLine);
 
-      // Initialize the trail with a count of 0, so it starts empty.
+      // Initialize trail with count 0 (starts empty and grows)
       trails.push({
         line: trailLine,
         positions: positions,
         progress: progressArray,
-        count: 0 // start with no points in the trail
+        count: 0
+      });
+    }
+  });
+
+  // --- Load Spike and Rigid Body Data ---
+  Promise.all([
+    fetch('./frame_times.bin').then(r => r.arrayBuffer()).then(buffer => new Float32Array(buffer)),
+    fetch('./spike_times.bin').then(r => r.arrayBuffer()).then(buffer => new Float32Array(buffer)),
+    fetch('./spike_neurons.bin').then(r => r.arrayBuffer()).then(buffer => new Uint16Array(buffer)),
+    fetch('./rbpos.bin').then(r => r.arrayBuffer()).then(buffer => new Float32Array(buffer))
+  ]).then(([ftData, stData, snData, rbDataRaw]) => {
+    frameTimes = ftData;
+    spikeTimes = stData;
+    spikeNeurons = snData;
+    // Process rbpos.bin into an array of objects (assuming three float32 values per frame)
+    const sampleCount = rbDataRaw.length / 3;
+    rbposData = [];
+    for (let i = 0; i < sampleCount; i++) {
+      rbposData.push({
+        x: rbDataRaw[i * 3],
+        y: rbDataRaw[i * 3 + 1],
+        z: rbDataRaw[i * 3 + 2]
       });
     }
   });
@@ -179,11 +218,9 @@ function onWindowResize() {
 
 function animate() {
   requestAnimationFrame(animate);
-
-  // Update OrbitControls (if damping is enabled)
   controls.update();
 
-  // Only update if marker data has been loaded
+  // --- Update Marker Positions and Trails ---
   if (markerData.length > 0) {
     markers.forEach((marker, i) => {
       const data = markerData[i];
@@ -191,48 +228,62 @@ function animate() {
       const pos = data[sampleIndex];
       marker.position.set(pos.x, pos.y, pos.z);
     
-      // Update the corresponding trail:
+      // Update corresponding trail:
       const trail = trails[i];
       const posArray = trail.positions;
       const progArray = trail.progress;
-      const stride = 3; // x, y, z per point
+      const stride = 3;
 
       if (trail.count === 0) {
-        // If the trail is empty, add the first point.
         posArray[0] = pos.x;
         posArray[1] = pos.y;
         posArray[2] = pos.z;
         trail.count = 1;
       } else {
-        // Shift positions to "age" the trail.
         for (let j = 0; j < (trail.count - 1) * stride; j++) {
           posArray[j] = posArray[j + stride];
         }
-        // Append the current position at the end of the current trail segment.
         const baseIndex = (trail.count - 1) * stride;
         posArray[baseIndex] = pos.x;
         posArray[baseIndex + 1] = pos.y;
         posArray[baseIndex + 2] = pos.z;
-
-        // Increase the trail count gradually until we reach the maximum.
         if (trail.count < maxTrailLength) {
           trail.count++;
         }
       }
     
-      // Update the progress attribute so that the oldest point is 0 and the newest is 1.
       for (let j = 0; j < trail.count; j++) {
         progArray[j] = (trail.count > 1) ? (j / (trail.count - 1)) : 1;
       }
     
-      // Update the draw range and mark attributes as needing an update.
       trail.line.geometry.setDrawRange(0, trail.count);
       trail.line.geometry.attributes.position.needsUpdate = true;
       trail.line.geometry.attributes.progress.needsUpdate = true;
     });
-
-    // Advance the sample index (adjust speed as desired)
     currentSample++;
+  }
+
+  // --- Drop Spike Dots ---
+  if (frameTimes.length > 0 && spikeTimes.length > 0 && rbposData.length > 0) {
+    const currentFrameTime = frameTimes[currentSample] || 0;
+    // Process all spikes that occur at or before the current frame time
+    while (spikeIndex < spikeTimes.length && spikeTimes[spikeIndex] <= currentFrameTime) {
+      const neuronId = spikeNeurons[spikeIndex];
+      // Check if this spike belongs to one of the selected neurons
+      if (SELECTED_NEURONS.includes(neuronId)) {
+        // Use the rigid body position from the current frame
+        const rbPos = rbposData[currentSample] || { x: 0, y: 0, z: 0 };
+        // Create a small sphere as the spike dot, using the color for this neuron
+        const spikeDot = new THREE.Mesh(
+          new THREE.SphereGeometry(0.008, 8, 8),
+          new THREE.MeshBasicMaterial({ color: neuronColors[neuronId] })
+        );
+        // Position the dot at the rigid body position (projected onto the floor, with a small offset in y)
+        spikeDot.position.set(rbPos.x, 0.005, rbPos.z);
+        spikeGroup.add(spikeDot);
+      }
+      spikeIndex++;
+    }
   }
 
   renderer.render(scene, camera);
