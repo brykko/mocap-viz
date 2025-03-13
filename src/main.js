@@ -39,6 +39,7 @@ let markers = [];
 let trails = [];
 let markerData = []; // Array of 8 markers, each with an array of {x, y, z} for each sample
 let currentSample = 0;
+let lastSampleIndex;
 const maxTrailLength = 240; // maximum number of positions in the trail
 
 // New globals for spike data
@@ -245,10 +246,10 @@ function animate() {
   if (markerData.length > 0) {
     markers.forEach((marker, i) => {
       const data = markerData[i];
-      const sampleIndex = currentSample % data.length;
+      const sampleIndex = Math.floor(currentSample) % data.length;
       const pos = data[sampleIndex];
       marker.position.set(pos.x, pos.y, pos.z);
-    
+
       // Update corresponding trail:
       const trail = trails[i];
       const posArray = trail.positions;
@@ -261,6 +262,7 @@ function animate() {
         posArray[2] = pos.z;
         trail.count = 1;
       } else {
+        // Shift positions to "age" the trail:
         for (let j = 0; j < (trail.count - 1) * stride; j++) {
           posArray[j] = posArray[j + stride];
         }
@@ -272,35 +274,49 @@ function animate() {
           trail.count++;
         }
       }
-    
+
+      // Update the progress attribute so that the oldest point is 0 and the newest is 1.
       for (let j = 0; j < trail.count; j++) {
         progArray[j] = (trail.count > 1) ? (j / (trail.count - 1)) : 1;
       }
-    
+
       trail.line.geometry.setDrawRange(0, trail.count);
       trail.line.geometry.attributes.position.needsUpdate = true;
       trail.line.geometry.attributes.progress.needsUpdate = true;
     });
-    // currentSample++;
+
+    // Increment currentSample using the playback speed.
     currentSample += Math.round(playbackControls.playbackSpeed);
+
+    // --- Detect Looping ---
+    // Compute the current frame index (assuming markerData[0] exists)
+    const currentFrameIndex = Math.floor(currentSample) % markerData[0].length;
+    if (currentFrameIndex < lastSampleIndex) {
+      // The animation has looped: clear spike dots and reset spikeIndex.
+      while (spikeGroup.children.length > 0) {
+        spikeGroup.remove(spikeGroup.children[0]);
+      }
+      spikeIndex = 0;
+    }
+    lastSampleIndex = currentFrameIndex;
   }
 
   // --- Drop Spike Dots ---
   if (frameTimes.length > 0 && spikeTimes.length > 0 && rbposData.length > 0) {
-    const currentFrameTime = frameTimes[currentSample] || 0;
-    // Process all spikes that occur at or before the current frame time
+    const currentFrameTime = frameTimes[Math.floor(currentSample)] || 0;
+    // Process all spikes that occur at or before the current frame time.
     while (spikeIndex < spikeTimes.length && spikeTimes[spikeIndex] <= currentFrameTime) {
       const neuronId = spikeNeurons[spikeIndex];
-      // Check if this spike belongs to one of the selected neurons
+      // Only drop spike dots for selected neurons.
       if (SELECTED_NEURONS.includes(neuronId)) {
-        // Use the rigid body position from the current frame
-        const rbPos = rbposData[currentSample] || { x: 0, y: 0, z: 0 };
-        // Create a small sphere as the spike dot, using the color for this neuron
+        // Use the rigid body position from the current frame.
+        const rbPos = rbposData[Math.floor(currentSample)] || { x: 0, y: 0, z: 0 };
+        // Create a small sphere as the spike dot, colored according to the neuron.
         const spikeDot = new THREE.Mesh(
           new THREE.SphereGeometry(0.008, 8, 8),
           new THREE.MeshBasicMaterial({ color: neuronColors[neuronId] })
         );
-        // Position the dot at the rigid body position (projected onto the floor, with a small offset in y)
+        // Position the spike dot on the floor (with a small y offset).
         spikeDot.position.set(rbPos.x, 0.005, rbPos.z);
         spikeGroup.add(spikeDot);
       }
