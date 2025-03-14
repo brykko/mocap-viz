@@ -297,6 +297,7 @@ function animate() {
         spikeGroup.remove(spikeGroup.children[0]);
       }
       spikeIndex = 0;
+      currentSample = 0;
     }
     lastSampleIndex = currentFrameIndex;
   }
