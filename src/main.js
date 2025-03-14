@@ -315,13 +315,17 @@ function updateSpikes() {
   }
 }
 
+const clock = new THREE.Clock();
+
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
 
   if (markerData.length > 0) {
     updateMarkersAndConnections();
-    currentSample += Math.round(playbackControls.playbackSpeed);
+    // currentSample += Math.round(playbackControls.playbackSpeed);
+    const delta = clock.getDelta();
+    currentSample += delta * 120 * playbackControls.playbackSpeed;
     const currentFrameIndex = Math.floor(currentSample) % markerData[0].length;
     if (currentFrameIndex < lastSampleIndex) {
       if (spikeGroup.clear) {
