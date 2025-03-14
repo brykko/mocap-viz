@@ -1,13 +1,16 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import * as dat from 'dat.gui';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 
 // Playback controls via dat.GUI.
 const playbackControls = {
   restart: function() {
     currentSample = 0;
     spikeIndex = 0;
-    // Clear spike dots.
     if (spikeGroup.clear) {
       spikeGroup.clear();
     } else {
@@ -23,7 +26,7 @@ const gui = new dat.GUI();
 gui.add(playbackControls, 'restart').name('Restart Animation');
 gui.add(playbackControls, 'playbackSpeed', 1, 10.0).name('Playback Speed');
 
-// Define selected neurons and assign colors.
+// Define which neurons to display and assign colors.
 const SELECTED_NEURONS = [60, 61];
 const neuronColors = {};
 SELECTED_NEURONS.forEach((id, i) => {
@@ -35,8 +38,8 @@ SELECTED_NEURONS.forEach((id, i) => {
 
 // Global scene variables.
 let scene, camera, renderer, controls;
-let markers = [];      // Spheres for each marker.
-let markerData = [];   // 8 arrays, one per marker.
+let markers = [];           // Spheres for each marker.
+let markerData = [];        // 8 arrays, one per marker.
 let currentSample = 0;
 let lastSampleIndex = 0;
 const maxTrailLength = 240;
@@ -47,19 +50,19 @@ let spikeTimes = [];
 let spikeNeurons = [];
 let rbposData = [];
 let spikeIndex = 0;
-let spikeGroup;  // Group to hold spike dots.
+let spikeGroup;
 
-// New objects for the rigid-body.
-let rbSphere;    // The orange sphere.
-let rbTrail;     // The trail for the rigid-body.
-let rbTrailCount = 0;  // Number of points in the rigid-body trail.
-let rbTrailPositions;  // Float32Array for rbTrail geometry.
+// Rigid-body objects.
+let rbSphere;               // The orange sphere.
+let rbTrail;                // Rigid-body trail using fat line.
+let rbTrailPositions;       // Flat array of numbers.
+let rbTrailCount = 0;
 
-// Connection lines for markers.
-let backLine1, backLine2;       // Lines connecting back markers (markers[0-2]).
-let rbConnLines;                // LineSegments connecting every pair among rigid-body markers (markers[3-7]).
+// Connection lines.
+let backLine1, backLine2;   // Fat lines for back marker connections.
+let rbConnLines;            // Fat line segments for rigid-body marker connections.
 
-// --- Helper: Add Camera Icons ---
+// --- Add Camera Icons (unchanged) ---
 function addCameraIcons() {
   const numCams = 6;
   const ringRadius = 1.0;
@@ -71,11 +74,9 @@ function addCameraIcons() {
     const x = ringRadius * Math.cos(angle);
     const z = ringRadius * Math.sin(angle);
     const camIcon = new THREE.Group();
-    // Camera body.
     const bodyGeom = new THREE.BoxGeometry(0.2 * camScale, 0.15 * camScale, 0.1 * camScale);
     const bodyMat = new THREE.MeshBasicMaterial({ color: 0xff5555, wireframe: true });
     camIcon.add(new THREE.Mesh(bodyGeom, bodyMat));
-    // Camera lens.
     const lensGeom = new THREE.ConeGeometry(0.1 * camScale, 0.1 * camScale, 20);
     const lensMat = new THREE.MeshBasicMaterial({ color: 0xff5555, wireframe: true });
     const lensMesh = new THREE.Mesh(lensGeom, lensMat);
@@ -93,28 +94,20 @@ function addCameraIcons() {
 function init() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-
-  camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0.3, 1.2, 1.5);
-
   renderer = new THREE.WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
   document.body.appendChild(renderer.domElement);
-
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-
-  // Add floor.
   const planeGeo = new THREE.PlaneGeometry(1.5, 1.5, 10, 10);
   const planeMat = new THREE.MeshBasicMaterial({ color: 0x555555, wireframe: true });
   const plane = new THREE.Mesh(planeGeo, planeMat);
-  plane.rotation.x = -Math.PI/2;
+  plane.rotation.x = -Math.PI / 2;
   scene.add(plane);
-
   addCameraIcons();
-
-  // Group for spike dots.
   spikeGroup = new THREE.Group();
   scene.add(spikeGroup);
 
@@ -143,7 +136,6 @@ function init() {
       scene.add(sphere);
       markers.push(sphere);
     }
-    // Create connection lines for markers.
     createConnectionLines();
   });
 
@@ -161,23 +153,29 @@ function init() {
     rbposData = [];
     for (let i = 0; i < sampleCount; i++) {
       rbposData.push({
-        x: rbDataRaw[i*3],
-        y: rbDataRaw[i*3+1],
-        z: rbDataRaw[i*3+2]
+        x: rbDataRaw[i * 3],
+        y: rbDataRaw[i * 3 + 1],
+        z: rbDataRaw[i * 3 + 2]
       });
     }
     // Create rigid-body sphere (orange).
     rbSphere = new THREE.Mesh(
       new THREE.SphereGeometry(0.015, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xffa500 }) // orange
+      new THREE.MeshBasicMaterial({ color: 0xffa500 })
     );
     scene.add(rbSphere);
-    // Create rigid-body trail.
-    rbTrailPositions = new Float32Array(maxTrailLength * 3);
-    const rbTrailGeo = new THREE.BufferGeometry();
-    rbTrailGeo.setAttribute('position', new THREE.BufferAttribute(rbTrailPositions, 3));
-    const rbTrailMat = new THREE.LineBasicMaterial({ color: 0xffa500 });
-    rbTrail = new THREE.Line(rbTrailGeo, rbTrailMat);
+    // Create rigid-body trail as a fat line.
+    rbTrailPositions = new Array(maxTrailLength * 3).fill(0);
+    const rbTrailGeom = new LineGeometry();
+    rbTrailGeom.setPositions(rbTrailPositions);
+    const rbTrailMat = new LineMaterial({
+      color: 0xffa500,
+      linewidth: 3,
+      resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+      transparent: true,
+    });
+    rbTrail = new Line2(rbTrailGeom, rbTrailMat);
+    rbTrail.computeLineDistances();
     scene.add(rbTrail);
   });
 
@@ -185,23 +183,40 @@ function init() {
 }
 
 function createConnectionLines() {
-  // Create back marker connections (markers[0] to markers[1] and markers[1] to markers[2]).
-  const backGeom1 = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-  backLine1 = new THREE.Line(backGeom1, new THREE.LineBasicMaterial({ color: 0xffffff }));
+  // Back marker connections (markers[0]-[1] and markers[1]-[2]) as fat lines.
+  const backPositions1 = [0, 0, 0, 0, 0, 0];
+  const backGeom1 = new LineGeometry();
+  backGeom1.setPositions(backPositions1);
+  const backMat = new LineMaterial({
+    color: 0xffffff,
+    linewidth: 2,
+    resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+    transparent: true,
+  });
+  backLine1 = new Line2(backGeom1, backMat);
+  backLine1.computeLineDistances();
   scene.add(backLine1);
 
-  const backGeom2 = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-  backLine2 = new THREE.Line(backGeom2, new THREE.LineBasicMaterial({ color: 0xffffff }));
+  const backPositions2 = [0, 0, 0, 0, 0, 0];
+  const backGeom2 = new LineGeometry();
+  backGeom2.setPositions(backPositions2);
+  backLine2 = new Line2(backGeom2, backMat.clone());
+  backLine2.computeLineDistances();
   scene.add(backLine2);
 
-  // Create rigid-body connections among markers[3] to markers[7] (complete graph).
-  // There are 5 markers, so 5 choose 2 = 10 segments, i.e. 20 vertices.
+  // Rigid-body connections among markers[3]-[7] as fat line segments.
   const numRbMarkers = 5;
   const numSegments = (numRbMarkers * (numRbMarkers - 1)) / 2;
-  const rbConnPositions = new Float32Array(numSegments * 2 * 3);
-  const rbConnGeom = new THREE.BufferGeometry();
-  rbConnGeom.setAttribute('position', new THREE.BufferAttribute(rbConnPositions, 3));
-  rbConnLines = new THREE.LineSegments(rbConnGeom, new THREE.LineBasicMaterial({ color: 0xffffff }));
+  const rbConnPositions = new Array(numSegments * 2 * 3).fill(0);
+  const rbConnGeom = new LineGeometry();
+  rbConnGeom.setPositions(rbConnPositions);
+  const rbConnMat = new LineMaterial({
+    color: 0xffffff,
+    linewidth: 2,
+    resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+    transparent: true,
+  });
+  rbConnLines = new LineSegments2(rbConnGeom, rbConnMat);
   scene.add(rbConnLines);
 }
 
@@ -209,11 +224,23 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  const resolution = new THREE.Vector2(window.innerWidth, window.innerHeight);
+  if (rbTrail && rbTrail.material && rbTrail.material.resolution) {
+    rbTrail.material.resolution.copy(resolution);
+  }
+  if (backLine1 && backLine1.material && backLine1.material.resolution) {
+    backLine1.material.resolution.copy(resolution);
+  }
+  if (backLine2 && backLine2.material && backLine2.material.resolution) {
+    backLine2.material.resolution.copy(resolution);
+  }
+  if (rbConnLines && rbConnLines.material && rbConnLines.material.resolution) {
+    rbConnLines.material.resolution.copy(resolution);
+  }
 }
 
 // --- Update Markers and Connection Lines ---
 function updateMarkersAndConnections() {
-  // Update marker positions from markerData.
   markers.forEach((marker, i) => {
     const data = markerData[i];
     const sampleIndex = Math.floor(currentSample) % data.length;
@@ -223,32 +250,28 @@ function updateMarkersAndConnections() {
 
   // Update back connections.
   if (markers.length >= 3) {
-    // Back marker line from markers[0] to markers[1]
-    backLine1.geometry.attributes.position.setXYZ(0, markers[0].position.x, markers[0].position.y, markers[0].position.z);
-    backLine1.geometry.attributes.position.setXYZ(1, markers[1].position.x, markers[1].position.y, markers[1].position.z);
-    backLine1.geometry.attributes.position.needsUpdate = true;
-    // Back marker line from markers[1] to markers[2]
-    backLine2.geometry.attributes.position.setXYZ(0, markers[1].position.x, markers[1].position.y, markers[1].position.z);
-    backLine2.geometry.attributes.position.setXYZ(1, markers[2].position.x, markers[2].position.y, markers[2].position.z);
-    backLine2.geometry.attributes.position.needsUpdate = true;
+    backLine1.geometry.setPositions([
+      markers[0].position.x, markers[0].position.y, markers[0].position.z,
+      markers[1].position.x, markers[1].position.y, markers[1].position.z,
+    ]);
+    backLine2.geometry.setPositions([
+      markers[1].position.x, markers[1].position.y, markers[1].position.z,
+      markers[2].position.x, markers[2].position.y, markers[2].position.z,
+    ]);
   }
 
-  // Update rigid-body connections (markers[3] to markers[7]).
+  // Update rigid-body connections among markers[3]-[7].
   if (markers.length >= 8) {
-    const positions = rbConnLines.geometry.attributes.position.array;
-    let idx = 0;
-    // For markers indices 3,4,5,6,7.
+    const positions = [];
     for (let i = 3; i < 8; i++) {
       for (let j = i + 1; j < 8; j++) {
-        positions[idx++] = markers[i].position.x;
-        positions[idx++] = markers[i].position.y;
-        positions[idx++] = markers[i].position.z;
-        positions[idx++] = markers[j].position.x;
-        positions[idx++] = markers[j].position.y;
-        positions[idx++] = markers[j].position.z;
+        positions.push(
+          markers[i].position.x, markers[i].position.y, markers[i].position.z,
+          markers[j].position.x, markers[j].position.y, markers[j].position.z
+        );
       }
     }
-    rbConnLines.geometry.attributes.position.needsUpdate = true;
+    rbConnLines.geometry.setPositions(positions);
   }
 }
 
@@ -259,12 +282,10 @@ function updateRigidBody() {
   const rbPos = rbposData[rbIndex];
   rbSphere.position.set(rbPos.x, rbPos.y, rbPos.z);
 
-  // Update the rigid-body trail:
-  // Shift existing positions.
+  // Update rigid-body trail.
   for (let i = 0; i < (rbTrailCount - 1) * 3; i++) {
     rbTrailPositions[i] = rbTrailPositions[i + 3];
   }
-  // Append the current rbPos.
   const base = (rbTrailCount - 1) * 3;
   rbTrailPositions[base] = rbPos.x;
   rbTrailPositions[base + 1] = rbPos.y;
@@ -272,8 +293,7 @@ function updateRigidBody() {
   if (rbTrailCount < maxTrailLength) {
     rbTrailCount++;
   }
-  rbTrail.geometry.setDrawRange(0, rbTrailCount);
-  rbTrail.geometry.attributes.position.needsUpdate = true;
+  rbTrail.geometry.setPositions(rbTrailPositions);
 }
 
 // --- Update Spike Dots ---
@@ -302,10 +322,8 @@ function animate() {
   if (markerData.length > 0) {
     updateMarkersAndConnections();
     currentSample += Math.round(playbackControls.playbackSpeed);
-    // Loop detection.
     const currentFrameIndex = Math.floor(currentSample) % markerData[0].length;
     if (currentFrameIndex < lastSampleIndex) {
-      // When looping, clear spike dots and reset indices.
       if (spikeGroup.clear) {
         spikeGroup.clear();
       } else {
