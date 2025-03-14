@@ -22,6 +22,8 @@ const playbackControls = {
   playbackSpeed: 1.0,
 };
 
+const DITHER_AMOUNT = 0.05;
+
 const gui = new dat.GUI();
 gui.add(playbackControls, 'restart').name('Restart Animation');
 gui.add(playbackControls, 'playbackSpeed', 1, 10.0).name('Playback Speed');
@@ -346,7 +348,14 @@ function updateSpikes() {
         new THREE.SphereGeometry(0.008, 8, 8),
         new THREE.MeshBasicMaterial({ color: neuronColors[neuronId] })
       );
-      spikeDot.position.set(rbPos.x, 0.005, rbPos.z);
+
+      spikeDot.position.set(
+        rbPos.x + (Math.random() - 0.5) * DITHER_AMOUNT,
+        0.005 + (Math.random() - 0.5) * DITHER_AMOUNT,
+        rbPos.z + (Math.random() - 0.5) * DITHER_AMOUNT
+      );
+
+      // spikeDot.position.set(rbPos.x, 0.005, rbPos.z);
       spikeGroup.add(spikeDot);
     }
     spikeIndex++;
