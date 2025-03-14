@@ -75,10 +75,10 @@ function addCameraIcons() {
     const z = ringRadius * Math.sin(angle);
     const camIcon = new THREE.Group();
     const bodyGeom = new THREE.BoxGeometry(0.2 * camScale, 0.15 * camScale, 0.1 * camScale);
-    const bodyMat = new THREE.MeshBasicMaterial({ color: 0xff5555, wireframe: true });
+    const bodyMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.5 });
     camIcon.add(new THREE.Mesh(bodyGeom, bodyMat));
     const lensGeom = new THREE.ConeGeometry(0.1 * camScale, 0.1 * camScale, 20);
-    const lensMat = new THREE.MeshBasicMaterial({ color: 0xff5555, wireframe: true });
+    const lensMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.5 });
     const lensMesh = new THREE.Mesh(lensGeom, lensMat);
     lensMesh.position.set(0, 0, 0.08 * camScale);
     lensMesh.rotation.x = Math.PI * 3 / 2;
@@ -275,26 +275,64 @@ function updateMarkersAndConnections() {
   }
 }
 
-// --- Update Rigid-Body Sphere and Trail ---
 function updateRigidBody() {
   if (rbposData.length === 0) return;
   const rbIndex = Math.floor(currentSample) % rbposData.length;
   const rbPos = rbposData[rbIndex];
   rbSphere.position.set(rbPos.x, rbPos.y, rbPos.z);
 
-  // Update rigid-body trail.
-  for (let i = 0; i < (rbTrailCount - 1) * 3; i++) {
-    rbTrailPositions[i] = rbTrailPositions[i + 3];
+  // If no points yet in the trail, initialize the first point.
+  if (rbTrailCount === 0) {
+    rbTrailPositions[0] = rbPos.x;
+    rbTrailPositions[1] = rbPos.y;
+    rbTrailPositions[2] = rbPos.z;
+    rbTrailCount = 1;
+  } else {
+    // Shift existing positions forward to "age" the trail.
+    for (let i = 0; i < (rbTrailCount - 1) * 3; i++) {
+      rbTrailPositions[i] = rbTrailPositions[i + 3];
+    }
+    // Set the last valid point in the trail.
+    const base = (rbTrailCount - 1) * 3;
+    rbTrailPositions[base] = rbPos.x;
+    rbTrailPositions[base + 1] = rbPos.y;
+    rbTrailPositions[base + 2] = rbPos.z;
+    if (rbTrailCount < maxTrailLength) {
+      rbTrailCount++;
+    }
   }
-  const base = (rbTrailCount - 1) * 3;
-  rbTrailPositions[base] = rbPos.x;
-  rbTrailPositions[base + 1] = rbPos.y;
-  rbTrailPositions[base + 2] = rbPos.z;
-  if (rbTrailCount < maxTrailLength) {
-    rbTrailCount++;
+
+  // Pad all unused positions with the current position to avoid jumps to (0,0,0).
+  for (let i = rbTrailCount; i < maxTrailLength; i++) {
+    const index = i * 3;
+    rbTrailPositions[index] = rbPos.x;
+    rbTrailPositions[index + 1] = rbPos.y;
+    rbTrailPositions[index + 2] = rbPos.z;
   }
+
   rbTrail.geometry.setPositions(rbTrailPositions);
 }
+
+// // --- Update Rigid-Body Sphere and Trail ---
+// function updateRigidBody() {
+//   if (rbposData.length === 0) return;
+//   const rbIndex = Math.floor(currentSample) % rbposData.length;
+//   const rbPos = rbposData[rbIndex];
+//   rbSphere.position.set(rbPos.x, rbPos.y, rbPos.z);
+
+//   // Update rigid-body trail.
+//   for (let i = 0; i < (rbTrailCount - 1) * 3; i++) {
+//     rbTrailPositions[i] = rbTrailPositions[i + 3];
+//   }
+//   const base = (rbTrailCount - 1) * 3;
+//   rbTrailPositions[base] = rbPos.x;
+//   rbTrailPositions[base + 1] = rbPos.y;
+//   rbTrailPositions[base + 2] = rbPos.z;
+//   if (rbTrailCount < maxTrailLength) {
+//     rbTrailCount++;
+//   }
+//   rbTrail.geometry.setPositions(rbTrailPositions);
+// }
 
 // --- Update Spike Dots ---
 function updateSpikes() {
