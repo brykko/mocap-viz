@@ -64,6 +64,30 @@ let rbTrailCount = 0;
 let backLine1, backLine2;   // Fat lines for back marker connections.
 let rbConnLines;            // Fat line segments for rigid-body marker connections.
 
+function createFOVCone(fov, height) {
+  // Compute base radius.
+  const radius = height * Math.tan(THREE.MathUtils.degToRad(fov / 2));
+  
+  // Create a cone geometry.
+  // The 'openEnded' flag is set to true so there's no cap on the cone.
+  const geometry = new THREE.ConeGeometry(radius, height, 32, 1, true);
+  
+  // Move the geometry so that the tip is at the origin.
+  geometry.translate(0, -height / 2, 0);
+  
+  // Create a material that fades toward the tip.
+  // Optionally you could create a custom ShaderMaterial for a smoother gradient.
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xffffaa,
+    transparent: true,
+    opacity: 0.2,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+  
+  return new THREE.Mesh(geometry, material);
+}
+
 // --- Add Camera Icons (unchanged) ---
 function addCameraIcons() {
   const numCams = 6;
@@ -87,6 +111,19 @@ function addCameraIcons() {
     camIcon.add(lensMesh);
     camIcon.position.set(x, camHeight, z);
     camIcon.lookAt(new THREE.Vector3(0, 0, 0));
+
+    // Add the light cone effect
+    // Example: Add a FOV cone to a camera icon.
+    const cameraFOV = 60;  // Field of view in degrees.
+    const coneHeight = 1.0;  // Desired length of the cone.
+    const fovCone = createFOVCone(cameraFOV, coneHeight);
+    
+    // Position the cone so that its tip is at the camera's location.
+    // For example, if your camera icon faces -Z, you might rotate the cone:
+    fovCone.rotation.x = Math.PI * 3 / 2;  // Flip it so the cone points forward.
+    fovCone.position.set(0, 0, 0);  // Adjust as needed.
+    camIcon.add(fovCone);
+
     camGroup.add(camIcon);
   }
   scene.add(camGroup);
@@ -314,27 +351,6 @@ function updateRigidBody() {
 
   rbTrail.geometry.setPositions(rbTrailPositions);
 }
-
-// // --- Update Rigid-Body Sphere and Trail ---
-// function updateRigidBody() {
-//   if (rbposData.length === 0) return;
-//   const rbIndex = Math.floor(currentSample) % rbposData.length;
-//   const rbPos = rbposData[rbIndex];
-//   rbSphere.position.set(rbPos.x, rbPos.y, rbPos.z);
-
-//   // Update rigid-body trail.
-//   for (let i = 0; i < (rbTrailCount - 1) * 3; i++) {
-//     rbTrailPositions[i] = rbTrailPositions[i + 3];
-//   }
-//   const base = (rbTrailCount - 1) * 3;
-//   rbTrailPositions[base] = rbPos.x;
-//   rbTrailPositions[base + 1] = rbPos.y;
-//   rbTrailPositions[base + 2] = rbPos.z;
-//   if (rbTrailCount < maxTrailLength) {
-//     rbTrailCount++;
-//   }
-//   rbTrail.geometry.setPositions(rbTrailPositions);
-// }
 
 // --- Update Spike Dots ---
 function updateSpikes() {
