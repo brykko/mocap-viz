@@ -103,7 +103,7 @@ function createFOVCone(fov, height) {
       varying float vDist;
       void main() {
         float intensity;
-        float minDist = 0.03;
+        float minDist = 0.05;
         float d = vDist;
         if (d > minDist) {
           // Inverse-square falloff.
@@ -130,6 +130,8 @@ function addCameraIcons() {
   const camHeight = 1.0;
   const camGroup = new THREE.Group();
   const camScale = 0.5;
+  const cameraFOV = 60;
+
   for (let i = 0; i < numCams; i++) {
     const angle = i * (2 * Math.PI / numCams);
     const x = ringRadius * Math.cos(angle);
@@ -138,10 +140,10 @@ function addCameraIcons() {
     const bodyGeom = new THREE.BoxGeometry(0.2 * camScale, 0.15 * camScale, 0.1 * camScale);
     const bodyMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.5 });
     camIcon.add(new THREE.Mesh(bodyGeom, bodyMat));
-    const lensGeom = new THREE.ConeGeometry(0.1 * camScale, 0.1 * camScale, 20);
+    const lensGeom = new THREE.ConeGeometry(0.06 * camScale, 0.1 * camScale, 20);
     const lensMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.5 });
     const lensMesh = new THREE.Mesh(lensGeom, lensMat);
-    lensMesh.position.set(0, 0, 0.08 * camScale);
+    lensMesh.position.set(0, 0, 0.05 * camScale);
     lensMesh.rotation.x = Math.PI * 3 / 2;
     camIcon.add(lensMesh);
     camIcon.position.set(x, camHeight, z);
@@ -150,14 +152,14 @@ function addCameraIcons() {
     // Add the light cone effect
     // Example: Add a FOV cone to a camera icon.
     if (SHOW_FOV_CONES) {
-        const cameraFOV = 60;  // Field of view in degrees.
+        // const cameraFOV = 60;  // Field of view in degrees.
         const coneHeight = 1.0;  // Desired length of the cone.
         const fovCone = createFOVCone(cameraFOV, coneHeight);
     
         // Position the cone so that its tip is at the camera's location.
         // For example, if your camera icon faces -Z, you might rotate the cone:
         fovCone.rotation.x = Math.PI * 3 / 2;  // Flip it so the cone points forward.
-        fovCone.position.set(0, 0, 0);  // Adjust as needed.
+        fovCone.position.set(0, 0, 0.005 * camScale);  // Adjust as needed.
         camIcon.add(fovCone);
     }
 
