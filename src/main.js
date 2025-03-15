@@ -412,7 +412,7 @@ function updateSpikes() {
       // const rbPos = rbposData[rbIndex] || { x: 0, y: 0, z: 0 };
       const spikeDot = new THREE.Mesh(
         new THREE.SphereGeometry(0.016, 8, 8),
-        new THREE.MeshBasicMaterial({ color: neuronColors[neuronId], transparent: true, opacity: 1.0 })
+        new THREE.MeshBasicMaterial({ color: neuronColors[neuronId] })
       );
       spikeDot.position.set(
         rbPos.x + (Math.random() - 0.5) * DITHER_AMOUNT,
@@ -450,13 +450,8 @@ function updateSpikeEmphasis() {
       spike.position.y = 0.005 + bounce;
       
       // Linearly interpolate opacity: from 1.0 to 0.5.
-      const newOpacity = THREE.MathUtils.lerp(1.0, 0.5, t);
-      spike.material.opacity = newOpacity;
-    } else {
-      // After 1 second, fix the spike at final values.
-      const initialScale = spike.userData.initialScale || spike.scale.x;
-      spike.scale.set(initialScale * 0.5, initialScale * 0.5, initialScale * 0.5);
-      spike.material.opacity = 0.5;
+      // const newOpacity = THREE.MathUtils.lerp(1.0, 0.5, t);
+      // spike.material.opacity = newOpacity;
     }
   });
 }
