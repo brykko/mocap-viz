@@ -79,7 +79,7 @@ function createFOVCone(fov, height) {
   geometry.translate(0, -height / 2, 0);
   const material = new THREE.ShaderMaterial({
     uniforms: {
-      diffuse: { value: new THREE.Color(0xffffaa) },
+      diffuse: { value: new THREE.Color(0xffffff) },
       opacity: { value: 0.1 },
       falloffScale: { value: 20 }
     },
@@ -239,46 +239,6 @@ function init() {
     rbTrail = new Line2(rbTrailGeom, rbTrailMat);
     rbTrail.computeLineDistances();
     scene.add(rbTrail);
-    
-    // // Create rigid-body trail as a fat line with fading.
-    // rbTrailPositions = new Float32Array(maxTrailLength * 3);
-    // rbTrailProgress = new Float32Array(maxTrailLength);
-    // for (let i = 0; i < maxTrailLength; i++) {
-    //   rbTrailProgress[i] = 0;
-    // }
-    // const rbTrailGeom = new LineGeometry();
-    // // Convert positions array to a standard array for LineGeometry.
-    // rbTrailGeom.setPositions(Array.from(rbTrailPositions));
-    // rbTrailGeom.setAttribute('progress', new THREE.BufferAttribute(rbTrailProgress, 1));
-    // const rbTrailMat = new LineMaterial({
-    //   vertexShader: `
-    //     attribute float progress;
-    //     varying float vProgress;
-    //     void main() {
-    //       vProgress = progress;
-    //       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    //     }
-    //   `,
-    //   fragmentShader: `
-    //     uniform vec3 diffuse;
-    //     uniform float opacity;
-    //     varying float vProgress;
-    //     void main() {
-    //       float a = opacity * smoothstep(0.0, 1.0, vProgress);
-    //       gl_FragColor = vec4(diffuse, a);
-    //     }
-    //   `,
-    //   uniforms: {
-    //     diffuse: { value: new THREE.Color(0xffa500) },
-    //     opacity: { value: 1.0 }
-    //   },
-    //   linewidth: 3,
-    //   resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
-    //   transparent: true,
-    // });
-    // rbTrail = new Line2(rbTrailGeom, rbTrailMat);
-    // rbTrail.computeLineDistances();
-    // scene.add(rbTrail);
   });
   
   window.addEventListener('resize', onWindowResize, false);
@@ -430,7 +390,7 @@ function updateSpikes() {
       const rbIndex = Math.floor(currentSample) % rbposData.length;
       const rbPos = rbposData[rbIndex] || { x: 0, y: 0, z: 0 };
       const spikeDot = new THREE.Mesh(
-        new THREE.SphereGeometry(0.008, 8, 8),
+        new THREE.SphereGeometry(0.016, 8, 8),
         new THREE.MeshBasicMaterial({ color: neuronColors[neuronId], transparent: true, opacity: 1.0 })
       );
       spikeDot.position.set(
@@ -446,27 +406,34 @@ function updateSpikes() {
   }
 }
 
-// --- Update Emphasis on New Spike Dots ---
-// For each spike in spikeGroup, if it is less than 1 second old, animate its scale and vertical offset.
 function updateSpikeEmphasis() {
   const currentTime = clock.getElapsedTime();
   spikeGroup.children.forEach(spike => {
     const birthTime = spike.userData.birthTime || 0;
     const age = currentTime - birthTime;
     if (age < 1) {
-      // Compute an easing factor using a simple damped oscillation.
-      // Example: scale oscillates from 1.5 down to 1 over 1 second.
-      const scale = 1 + 0.5 * Math.exp(-3 * age) * Math.abs(Math.cos(12 * age));
-      spike.scale.set(scale, scale, scale);
+      const t = age; // t goes from 0 to 1 over one second
+      // Save the initial scale if not already stored.
+      if (!spike.userData.initialScale) {
+        spike.userData.initialScale = spike.scale.x;
+      }
+      const initialScale = spike.userData.initialScale;
+      // Linearly interpolate scale: final scale is half the initial.
+      const newScale = THREE.MathUtils.lerp(initialScale, initialScale * 0.5, t);
+      spike.scale.set(newScale, newScale, newScale);
+
       // Optionally add a vertical bounce offset.
-      const bounce = 0.02 * Math.exp(-3 * age) * Math.abs(Math.sin(12 * age));
+      const bounce = 0.05 * Math.exp(-3 * age) * Math.abs(Math.cos(12 * age));
       spike.position.y = 0.005 + bounce;
-      // Ensure full opacity.
-      spike.material.opacity = 1.0;
+      
+      // Linearly interpolate opacity: from 1.0 to 0.5.
+      const newOpacity = THREE.MathUtils.lerp(1.0, 0.5, t);
+      spike.material.opacity = newOpacity;
     } else {
-      spike.scale.set(1, 1, 1);
-      spike.position.y = 0.005;
-      spike.material.opacity = 1.0;
+      // After 1 second, fix the spike at final values.
+      const initialScale = spike.userData.initialScale || spike.scale.x;
+      spike.scale.set(initialScale * 0.5, initialScale * 0.5, initialScale * 0.5);
+      spike.material.opacity = 0.5;
     }
   });
 }
