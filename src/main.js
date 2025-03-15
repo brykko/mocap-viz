@@ -14,8 +14,8 @@ const playbackControls = {
 
 const DITHER_AMOUNT = 0.05;
 const SHOW_FOV_CONES = true;
-const LOOP_PLAYBACK = true;
-const STOP_AT_END = false; // Already supported by your code
+const LOOP_PLAYBACK = false;
+const SHOW_TRAIL = false;
 
 const gui = new dat.GUI();
 gui.add(playbackControls, 'restart').name('Restart Animation');
@@ -36,6 +36,7 @@ let scene, camera, renderer, controls;
 let markers = [];           // Spheres for each marker.
 let markerData = [];        // 8 arrays, one per marker.
 let currentSample = 0;      // global frame counter
+let rbPos;                  // current rigid-body position
 let lastSampleIndex = 0;    // used within animate() only
 const maxTrailLength = 240;
 
@@ -96,9 +97,13 @@ function createFOVCone(fov, height) {
       uniform float falloffScale;
       varying float vDist;
       void main() {
-        float d = max(vDist, 0.001);
-        float intensity = 1.0 / (d * d * falloffScale);
-        intensity = clamp(intensity, 0.0, 1.0);
+        float intensity;
+        if (vDist < 0.05) {
+            intensity = 0.0;
+        } else {
+            intensity = 1.0 / (vDist * vDist * falloffScale);
+            intensity = clamp(intensity, 0.0, 1.0);
+        }
         gl_FragColor = vec4(diffuse, opacity * intensity);
       }
     `,
@@ -109,13 +114,15 @@ function createFOVCone(fov, height) {
   return new THREE.Mesh(geometry, material);
 }
 
-// ----- Add Camera Icons (modified to include FOV cones) -----
+// --- Add Camera Icons (unchanged) ---
 function addCameraIcons() {
   const numCams = 6;
   const ringRadius = 1.0;
   const camHeight = 1.0;
   const camGroup = new THREE.Group();
   const camScale = 0.5;
+  const cameraFOV = 60;
+
   for (let i = 0; i < numCams; i++) {
     const angle = i * (2 * Math.PI / numCams);
     const x = ringRadius * Math.cos(angle);
@@ -124,24 +131,29 @@ function addCameraIcons() {
     const bodyGeom = new THREE.BoxGeometry(0.2 * camScale, 0.15 * camScale, 0.1 * camScale);
     const bodyMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.5 });
     camIcon.add(new THREE.Mesh(bodyGeom, bodyMat));
-    const lensGeom = new THREE.ConeGeometry(0.1 * camScale, 0.1 * camScale, 20);
+    const lensGeom = new THREE.ConeGeometry(0.06 * camScale, 0.1 * camScale, 20);
     const lensMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.5 });
     const lensMesh = new THREE.Mesh(lensGeom, lensMat);
-    lensMesh.position.set(0, 0, 0.08 * camScale);
+    lensMesh.position.set(0, 0, 0.05 * camScale);
     lensMesh.rotation.x = Math.PI * 3 / 2;
     camIcon.add(lensMesh);
     camIcon.position.set(x, camHeight, z);
     camIcon.lookAt(new THREE.Vector3(0, 0, 0));
-    
+
+    // Add the light cone effect
+    // Example: Add a FOV cone to a camera icon.
     if (SHOW_FOV_CONES) {
-      const cameraFOV = 60;
-      const coneHeight = 1.0;
-      const fovCone = createFOVCone(cameraFOV, coneHeight);
-      fovCone.rotation.x = Math.PI * 3 / 2;
-      fovCone.position.set(0, 0, 0);
-      camIcon.add(fovCone);
-    }
+        // const cameraFOV = 60;  // Field of view in degrees.
+        const coneHeight = 1.0;  // Desired length of the cone.
+        const fovCone = createFOVCone(cameraFOV, coneHeight);
     
+        // Position the cone so that its tip is at the camera's location.
+        // For example, if your camera icon faces -Z, you might rotate the cone:
+        fovCone.rotation.x = Math.PI * 3 / 2;  // Flip it so the cone points forward.
+        fovCone.position.set(0, 0, 0.005 * camScale);  // Adjust as needed.
+        camIcon.add(fovCone);
+    }
+
     camGroup.add(camIcon);
   }
   scene.add(camGroup);
@@ -226,19 +238,21 @@ function init() {
     scene.add(rbSphere);
 
     // Create rigid-body trail as a fat line.
-    rbTrailPositions = new Array(maxTrailLength * 3).fill(0);
-    const rbTrailGeom = new LineGeometry();
-    rbTrailGeom.setPositions(rbTrailPositions);
-    const rbTrailMat = new LineMaterial({
-      color: 0xffffff,
-      linewidth: 2,
-      resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
-      transparent: true,
-      opacity: 0.2
-    });
-    rbTrail = new Line2(rbTrailGeom, rbTrailMat);
-    rbTrail.computeLineDistances();
-    scene.add(rbTrail);
+    if (SHOW_TRAIL) {
+        rbTrailPositions = new Array(maxTrailLength * 3).fill(0);
+        const rbTrailGeom = new LineGeometry();
+        rbTrailGeom.setPositions(rbTrailPositions);
+        const rbTrailMat = new LineMaterial({
+          color: 0xffffff,
+          linewidth: 2,
+          resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+          transparent: true,
+          opacity: 0.5
+        });
+        rbTrail = new Line2(rbTrailGeom, rbTrailMat);
+        rbTrail.computeLineDistances();
+        scene.add(rbTrail);
+    }
   });
   
   window.addEventListener('resize', onWindowResize, false);
@@ -337,11 +351,14 @@ function updateMarkersAndConnections() {
 
 // --- Update Rigid-Body Sphere and Fading Trail ---
 function updateRigidBody() {
-  if (!rbTrail) return; // Wait until rbTrail is initialized.
+  // if (!rbTrail) return; // Wait until rbTrail is initialized.
   if (rbposData.length === 0) return;
   const rbIndex = Math.floor(currentSample) % rbposData.length;
-  const rbPos = rbposData[rbIndex];
+  rbPos = rbposData[rbIndex]; // update global variable
   rbSphere.position.set(rbPos.x, rbPos.y, rbPos.z);
+
+  // Everything below relates to trail-plotting
+  if (!SHOW_TRAIL) return;
   
   if (rbTrailCount === 0) {
     rbTrailPositions[0] = rbPos.x;
@@ -388,14 +405,14 @@ function updateSpikes() {
     const neuronId = spikeNeurons[spikeIndex];
     if (SELECTED_NEURONS.includes(neuronId)) {
       const rbIndex = Math.floor(currentSample) % rbposData.length;
-      const rbPos = rbposData[rbIndex] || { x: 0, y: 0, z: 0 };
+      // const rbPos = rbposData[rbIndex] || { x: 0, y: 0, z: 0 };
       const spikeDot = new THREE.Mesh(
         new THREE.SphereGeometry(0.016, 8, 8),
         new THREE.MeshBasicMaterial({ color: neuronColors[neuronId], transparent: true, opacity: 1.0 })
       );
       spikeDot.position.set(
         rbPos.x + (Math.random() - 0.5) * DITHER_AMOUNT,
-        0.005 + (Math.random() - 0.5) * DITHER_AMOUNT,
+        0, // doesn't actually matter because vertical pos is set by emphasis animation
         rbPos.z + (Math.random() - 0.5) * DITHER_AMOUNT
       );
       // Record birth time for emphasis animation.
@@ -422,8 +439,10 @@ function updateSpikeEmphasis() {
       const newScale = THREE.MathUtils.lerp(initialScale, initialScale * 0.5, t);
       spike.scale.set(newScale, newScale, newScale);
 
-      // Optionally add a vertical bounce offset.
-      const bounce = 0.05 * Math.exp(-3 * age) * Math.abs(Math.cos(12 * age));
+      // "bounce" the spikes by applying a decaying oscillating function
+      // to the vertical position. The initial value is the current RB position,
+      // and it exponentially decays to a fixed height.
+      const bounce = rbPos.y * Math.exp(-3 * age) * Math.abs(Math.cos(12 * age));
       spike.position.y = 0.005 + bounce;
       
       // Linearly interpolate opacity: from 1.0 to 0.5.
@@ -461,9 +480,9 @@ function animate() {
   }
   
   if (frameTimes.length > 0 && spikeTimes.length > 0 && rbposData.length > 0) {
+    updateRigidBody();
     updateSpikes();
     updateSpikeEmphasis();
-    updateRigidBody();
   }
   
   renderer.render(scene, camera);
