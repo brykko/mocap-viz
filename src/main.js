@@ -224,46 +224,61 @@ function init() {
       new THREE.MeshBasicMaterial({ color: 0xffa500 })
     );
     scene.add(rbSphere);
-    
-    // Create rigid-body trail as a fat line with fading.
-    rbTrailPositions = new Float32Array(maxTrailLength * 3);
-    rbTrailProgress = new Float32Array(maxTrailLength);
-    for (let i = 0; i < maxTrailLength; i++) {
-      rbTrailProgress[i] = 0;
-    }
+
+    // Create rigid-body trail as a fat line.
+    rbTrailPositions = new Array(maxTrailLength * 3).fill(0);
     const rbTrailGeom = new LineGeometry();
-    // Convert positions array to a standard array for LineGeometry.
-    rbTrailGeom.setPositions(Array.from(rbTrailPositions));
-    rbTrailGeom.setAttribute('progress', new THREE.BufferAttribute(rbTrailProgress, 1));
+    rbTrailGeom.setPositions(rbTrailPositions);
     const rbTrailMat = new LineMaterial({
-      vertexShader: `
-        attribute float progress;
-        varying float vProgress;
-        void main() {
-          vProgress = progress;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        uniform vec3 diffuse;
-        uniform float opacity;
-        varying float vProgress;
-        void main() {
-          float a = opacity * smoothstep(0.0, 1.0, vProgress);
-          gl_FragColor = vec4(diffuse, a);
-        }
-      `,
-      uniforms: {
-        diffuse: { value: new THREE.Color(0xffa500) },
-        opacity: { value: 1.0 }
-      },
-      linewidth: 3,
+      color: 0xffffff,
+      linewidth: 2,
       resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
       transparent: true,
+      opacity: 0.2
     });
     rbTrail = new Line2(rbTrailGeom, rbTrailMat);
     rbTrail.computeLineDistances();
     scene.add(rbTrail);
+    
+    // // Create rigid-body trail as a fat line with fading.
+    // rbTrailPositions = new Float32Array(maxTrailLength * 3);
+    // rbTrailProgress = new Float32Array(maxTrailLength);
+    // for (let i = 0; i < maxTrailLength; i++) {
+    //   rbTrailProgress[i] = 0;
+    // }
+    // const rbTrailGeom = new LineGeometry();
+    // // Convert positions array to a standard array for LineGeometry.
+    // rbTrailGeom.setPositions(Array.from(rbTrailPositions));
+    // rbTrailGeom.setAttribute('progress', new THREE.BufferAttribute(rbTrailProgress, 1));
+    // const rbTrailMat = new LineMaterial({
+    //   vertexShader: `
+    //     attribute float progress;
+    //     varying float vProgress;
+    //     void main() {
+    //       vProgress = progress;
+    //       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    //     }
+    //   `,
+    //   fragmentShader: `
+    //     uniform vec3 diffuse;
+    //     uniform float opacity;
+    //     varying float vProgress;
+    //     void main() {
+    //       float a = opacity * smoothstep(0.0, 1.0, vProgress);
+    //       gl_FragColor = vec4(diffuse, a);
+    //     }
+    //   `,
+    //   uniforms: {
+    //     diffuse: { value: new THREE.Color(0xffa500) },
+    //     opacity: { value: 1.0 }
+    //   },
+    //   linewidth: 3,
+    //   resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+    //   transparent: true,
+    // });
+    // rbTrail = new Line2(rbTrailGeom, rbTrailMat);
+    // rbTrail.computeLineDistances();
+    // scene.add(rbTrail);
   });
   
   window.addEventListener('resize', onWindowResize, false);
