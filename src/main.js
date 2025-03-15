@@ -15,6 +15,7 @@ const playbackControls = {
 const DITHER_AMOUNT = 0.05;
 const SHOW_FOV_CONES = true;
 const LOOP_PLAYBACK = true;
+const STOP_AT_END = false; // Already supported by your code
 
 const gui = new dat.GUI();
 gui.add(playbackControls, 'restart').name('Restart Animation');
@@ -50,6 +51,7 @@ let spikeGroup;
 let rbSphere;               // The orange sphere.
 let rbTrail;                // Rigid-body trail using fat line.
 let rbTrailPositions;       // Flat array of numbers.
+let rbTrailProgress;        // Flat array of progress values.
 let rbTrailCount = 0;
 
 // Connection lines.
@@ -72,26 +74,18 @@ function restartAnimation() {
 
 // ----- New: Create a FOV cone with graded (inverse-square) falloff -----
 function createFOVCone(fov, height) {
-  // Compute the base radius of the cone.
   const radius = height * Math.tan(THREE.MathUtils.degToRad(fov / 2));
-  
-  // Create a cone geometry. Set openEnded to true so it has no cap.
   const geometry = new THREE.ConeGeometry(radius, height, 32, 1, true);
-  // Translate so that the tip is at the origin.
   geometry.translate(0, -height / 2, 0);
-  
-  // Create a custom shader material that fades according to the inverse-square law.
   const material = new THREE.ShaderMaterial({
     uniforms: {
-      diffuse: { value: new THREE.Color(0xffffff) },
+      diffuse: { value: new THREE.Color(0xffffaa) },
       opacity: { value: 0.1 },
-      falloffScale: { value: 20}
+      falloffScale: { value: 20 }
     },
     vertexShader: `
       varying float vDist;
       void main() {
-        // Assuming the cone is oriented along negative Y,
-        // use the absolute y-coordinate as distance.
         vDist = abs(position.y);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
@@ -102,28 +96,20 @@ function createFOVCone(fov, height) {
       uniform float falloffScale;
       varying float vDist;
       void main() {
-        float intensity;
-        float minDist = 0.03;
-        float d = vDist;
-        if (d > minDist) {
-          // Inverse-square falloff.
-          intensity = 1.0 / (d * d * falloffScale);
-          intensity = clamp(intensity, 0.0, 1.0);
-        } else {
-          intensity = 0.0; 
-        }
+        float d = max(vDist, 0.001);
+        float intensity = 1.0 / (d * d * falloffScale);
+        intensity = clamp(intensity, 0.0, 1.0);
         gl_FragColor = vec4(diffuse, opacity * intensity);
       }
     `,
-    transparent: true,  
+    transparent: true,
     depthWrite: false,
     side: THREE.DoubleSide
   });
-  
   return new THREE.Mesh(geometry, material);
 }
 
-// --- Add Camera Icons (unchanged) ---
+// ----- Add Camera Icons (modified to include FOV cones) -----
 function addCameraIcons() {
   const numCams = 6;
   const ringRadius = 1.0;
@@ -146,27 +132,22 @@ function addCameraIcons() {
     camIcon.add(lensMesh);
     camIcon.position.set(x, camHeight, z);
     camIcon.lookAt(new THREE.Vector3(0, 0, 0));
-
-    // Add the light cone effect
-    // Example: Add a FOV cone to a camera icon.
-    if (SHOW_FOV_CONES) {
-        const cameraFOV = 60;  // Field of view in degrees.
-        const coneHeight = 1.0;  // Desired length of the cone.
-        const fovCone = createFOVCone(cameraFOV, coneHeight);
     
-        // Position the cone so that its tip is at the camera's location.
-        // For example, if your camera icon faces -Z, you might rotate the cone:
-        fovCone.rotation.x = Math.PI * 3 / 2;  // Flip it so the cone points forward.
-        fovCone.position.set(0, 0, 0);  // Adjust as needed.
-        camIcon.add(fovCone);
+    if (SHOW_FOV_CONES) {
+      const cameraFOV = 60;
+      const coneHeight = 1.0;
+      const fovCone = createFOVCone(cameraFOV, coneHeight);
+      fovCone.rotation.x = Math.PI * 3 / 2;
+      fovCone.position.set(0, 0, 0);
+      camIcon.add(fovCone);
     }
-
+    
     camGroup.add(camIcon);
   }
   scene.add(camGroup);
 }
 
-// --- Initialize Scene ---
+// ----- Initialize Scene -----
 function init() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -178,16 +159,19 @@ function init() {
   document.body.appendChild(renderer.domElement);
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  
   const planeGeo = new THREE.PlaneGeometry(1.5, 1.5, 10, 10);
   const planeMat = new THREE.MeshBasicMaterial({ color: 0x555555, wireframe: true });
   const plane = new THREE.Mesh(planeGeo, planeMat);
   plane.rotation.x = -Math.PI / 2;
   scene.add(plane);
+  
   addCameraIcons();
+  
   spikeGroup = new THREE.Group();
   scene.add(spikeGroup);
-
-  // --- Load Marker Data ---
+  
+  // Load marker data.
   Promise.all([
     fetch('./markers8_x.bin').then(r => r.arrayBuffer()).then(buffer => new Float32Array(buffer)),
     fetch('./markers8_y.bin').then(r => r.arrayBuffer()).then(buffer => new Float32Array(buffer)),
@@ -204,7 +188,7 @@ function init() {
     }
     // Create marker spheres.
     for (let i = 0; i < markersCount; i++) {
-      const color = (i < 3) ? 0x00ff00 : 0x00ff00;
+      const color = (i < 3) ? 0xffffff : 0x00ff00;
       const sphere = new THREE.Mesh(
         new THREE.SphereGeometry(0.01, 16, 16),
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 })
@@ -214,8 +198,8 @@ function init() {
     }
     createConnectionLines();
   });
-
-  // --- Load Spike and Rigid-Body Data ---
+  
+  // Load spike and rigid-body data.
   Promise.all([
     fetch('./frame_times.bin').then(r => r.arrayBuffer()).then(buffer => new Float32Array(buffer)),
     fetch('./spike_times.bin').then(r => r.arrayBuffer()).then(buffer => new Float32Array(buffer)),
@@ -240,22 +224,48 @@ function init() {
       new THREE.MeshBasicMaterial({ color: 0xffa500 })
     );
     scene.add(rbSphere);
-    // Create rigid-body trail as a fat line.
-    rbTrailPositions = new Array(maxTrailLength * 3).fill(0);
+    
+    // Create rigid-body trail as a fat line with fading.
+    rbTrailPositions = new Float32Array(maxTrailLength * 3);
+    rbTrailProgress = new Float32Array(maxTrailLength);
+    for (let i = 0; i < maxTrailLength; i++) {
+      rbTrailProgress[i] = 0;
+    }
     const rbTrailGeom = new LineGeometry();
-    rbTrailGeom.setPositions(rbTrailPositions);
+    // Convert positions array to a standard array for LineGeometry.
+    rbTrailGeom.setPositions(Array.from(rbTrailPositions));
+    rbTrailGeom.setAttribute('progress', new THREE.BufferAttribute(rbTrailProgress, 1));
     const rbTrailMat = new LineMaterial({
-      color: 0xffffff,
-      linewidth: 2,
+      vertexShader: `
+        attribute float progress;
+        varying float vProgress;
+        void main() {
+          vProgress = progress;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 diffuse;
+        uniform float opacity;
+        varying float vProgress;
+        void main() {
+          float a = opacity * smoothstep(0.0, 1.0, vProgress);
+          gl_FragColor = vec4(diffuse, a);
+        }
+      `,
+      uniforms: {
+        diffuse: { value: new THREE.Color(0xffa500) },
+        opacity: { value: 1.0 }
+      },
+      linewidth: 3,
       resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
       transparent: true,
-      opacity: 0.2
     });
     rbTrail = new Line2(rbTrailGeom, rbTrailMat);
     rbTrail.computeLineDistances();
     scene.add(rbTrail);
   });
-
+  
   window.addEventListener('resize', onWindowResize, false);
 }
 
@@ -265,7 +275,7 @@ function createConnectionLines() {
   const backGeom1 = new LineGeometry();
   backGeom1.setPositions(backPositions1);
   const backMat = new LineMaterial({
-    color: 0x00ff00,
+    color: 0xffffff,
     linewidth: 2,
     resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
     transparent: true,
@@ -273,14 +283,14 @@ function createConnectionLines() {
   backLine1 = new Line2(backGeom1, backMat);
   backLine1.computeLineDistances();
   scene.add(backLine1);
-
+  
   const backPositions2 = [0, 0, 0, 0, 0, 0];
   const backGeom2 = new LineGeometry();
   backGeom2.setPositions(backPositions2);
   backLine2 = new Line2(backGeom2, backMat.clone());
   backLine2.computeLineDistances();
   scene.add(backLine2);
-
+  
   // Rigid-body connections among markers[3]-[7] as fat line segments.
   const numRbMarkers = 5;
   const numSegments = (numRbMarkers * (numRbMarkers - 1)) / 2;
@@ -288,7 +298,7 @@ function createConnectionLines() {
   const rbConnGeom = new LineGeometry();
   rbConnGeom.setPositions(rbConnPositions);
   const rbConnMat = new LineMaterial({
-    color: 0x00ff00,
+    color: 0xffffff,
     linewidth: 2,
     resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
     transparent: true,
@@ -320,12 +330,11 @@ function onWindowResize() {
 function updateMarkersAndConnections() {
   markers.forEach((marker, i) => {
     const data = markerData[i];
-    const sampleIndex = Math.floor(currentSample);
+    const sampleIndex = Math.floor(currentSample) % data.length;
     const pos = data[sampleIndex];
     marker.position.set(pos.x, pos.y, pos.z);
   });
-
-  // Update back connections.
+  
   if (markers.length >= 3) {
     backLine1.geometry.setPositions([
       markers[0].position.x, markers[0].position.y, markers[0].position.z,
@@ -336,8 +345,7 @@ function updateMarkersAndConnections() {
       markers[2].position.x, markers[2].position.y, markers[2].position.z,
     ]);
   }
-
-  // Update rigid-body connections among markers[3]-[7].
+  
   if (markers.length >= 8) {
     const positions = [];
     for (let i = 3; i < 8; i++) {
@@ -352,24 +360,23 @@ function updateMarkersAndConnections() {
   }
 }
 
+// --- Update Rigid-Body Sphere and Fading Trail ---
 function updateRigidBody() {
+  if (!rbTrail) return; // Wait until rbTrail is initialized.
   if (rbposData.length === 0) return;
-  const rbIndex = Math.floor(currentSample);
+  const rbIndex = Math.floor(currentSample) % rbposData.length;
   const rbPos = rbposData[rbIndex];
   rbSphere.position.set(rbPos.x, rbPos.y, rbPos.z);
-
-  // If no points yet in the trail, initialize the first point.
+  
   if (rbTrailCount === 0) {
     rbTrailPositions[0] = rbPos.x;
     rbTrailPositions[1] = rbPos.y;
     rbTrailPositions[2] = rbPos.z;
     rbTrailCount = 1;
   } else {
-    // Shift existing positions forward to "age" the trail.
     for (let i = 0; i < (rbTrailCount - 1) * 3; i++) {
       rbTrailPositions[i] = rbTrailPositions[i + 3];
     }
-    // Set the last valid point in the trail.
     const base = (rbTrailCount - 1) * 3;
     rbTrailPositions[base] = rbPos.x;
     rbTrailPositions[base + 1] = rbPos.y;
@@ -378,42 +385,75 @@ function updateRigidBody() {
       rbTrailCount++;
     }
   }
-
-  // Pad all unused positions with the current position to avoid jumps to (0,0,0).
   for (let i = rbTrailCount; i < maxTrailLength; i++) {
     const index = i * 3;
     rbTrailPositions[index] = rbPos.x;
     rbTrailPositions[index + 1] = rbPos.y;
     rbTrailPositions[index + 2] = rbPos.z;
   }
-
-  rbTrail.geometry.setPositions(rbTrailPositions);
+  rbTrail.geometry.setPositions(Array.from(rbTrailPositions));
+  
+  // For a fading effect, we update a custom "progress" attribute.
+  // Here, we set the oldest valid point to 0 and the newest to 1, then pad the rest with 1.
+  const progressArray = [];
+  for (let i = 0; i < rbTrailCount; i++) {
+    progressArray.push((rbTrailCount > 1) ? (i / (rbTrailCount - 1)) : 1);
+  }
+  for (let i = rbTrailCount; i < maxTrailLength; i++) {
+    progressArray.push(1);
+  }
+  rbTrail.geometry.setAttribute('progress', new THREE.BufferAttribute(new Float32Array(progressArray), 1));
+  rbTrail.geometry.attributes.progress.needsUpdate = true;
 }
 
-// --- Update Spike Dots ---
+// --- Update Spike Dots and Emphasize New Spikes ---
 function updateSpikes() {
   const currentFrameTime = frameTimes[Math.floor(currentSample)] || 0;
   while (spikeIndex < spikeTimes.length && spikeTimes[spikeIndex] <= currentFrameTime) {
     const neuronId = spikeNeurons[spikeIndex];
     if (SELECTED_NEURONS.includes(neuronId)) {
-      const rbIndex = Math.floor(currentSample);
+      const rbIndex = Math.floor(currentSample) % rbposData.length;
       const rbPos = rbposData[rbIndex] || { x: 0, y: 0, z: 0 };
       const spikeDot = new THREE.Mesh(
         new THREE.SphereGeometry(0.008, 8, 8),
-        new THREE.MeshBasicMaterial({ color: neuronColors[neuronId], transparent: true, opacity: 0.5 })
+        new THREE.MeshBasicMaterial({ color: neuronColors[neuronId], transparent: true, opacity: 1.0 })
       );
-
       spikeDot.position.set(
         rbPos.x + (Math.random() - 0.5) * DITHER_AMOUNT,
-        0.005,
+        0.005 + (Math.random() - 0.5) * DITHER_AMOUNT,
         rbPos.z + (Math.random() - 0.5) * DITHER_AMOUNT
       );
-
-      // spikeDot.position.set(rbPos.x, 0.005, rbPos.z);
+      // Record birth time for emphasis animation.
+      spikeDot.userData.birthTime = clock.getElapsedTime();
       spikeGroup.add(spikeDot);
     }
     spikeIndex++;
   }
+}
+
+// --- Update Emphasis on New Spike Dots ---
+// For each spike in spikeGroup, if it is less than 1 second old, animate its scale and vertical offset.
+function updateSpikeEmphasis() {
+  const currentTime = clock.getElapsedTime();
+  spikeGroup.children.forEach(spike => {
+    const birthTime = spike.userData.birthTime || 0;
+    const age = currentTime - birthTime;
+    if (age < 1) {
+      // Compute an easing factor using a simple damped oscillation.
+      // Example: scale oscillates from 1.5 down to 1 over 1 second.
+      const scale = 1 + 0.5 * Math.exp(-3 * age) * Math.abs(Math.cos(12 * age));
+      spike.scale.set(scale, scale, scale);
+      // Optionally add a vertical bounce offset.
+      const bounce = 0.02 * Math.exp(-3 * age) * Math.abs(Math.sin(12 * age));
+      spike.position.y = 0.005 + bounce;
+      // Ensure full opacity.
+      spike.material.opacity = 1.0;
+    } else {
+      spike.scale.set(1, 1, 1);
+      spike.position.y = 0.005;
+      spike.material.opacity = 1.0;
+    }
+  });
 }
 
 const clock = new THREE.Clock();
@@ -421,38 +461,29 @@ const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
-
+  
   if (markerData.length > 0) {
     updateMarkersAndConnections();
-    // currentSample += Math.round(playbackControls.playbackSpeed);
     const delta = clock.getDelta();
     currentSample += delta * 120 * playbackControls.playbackSpeed;
-    console.log("Current sample: ", currentSample)
-
-    let currentFrameIndex;
-    currentFrameIndex = Math.floor(currentSample) % markerData[0].length;
-
-    // Detect looping condition. This happens when local variable 
-    // "currentFrameIndex" loops back to the start
+    let currentFrameIndex = Math.floor(currentSample) % markerData[0].length;
     if (currentFrameIndex < lastSampleIndex) {
       if (LOOP_PLAYBACK) {
-        console.log("Detecting looping condition: restarting!")
-          restartAnimation();
+        restartAnimation();
       } else {
-          // Freeze animation at the final step
-          console.log("Detected end of data: freezing!")
-          currentFrameIndex = markerData[0].length - 1;
-          currentSample = currentFrameIndex;
+        currentFrameIndex = markerData[0].length - 1;
+        currentSample = currentFrameIndex;
       }
     }
     lastSampleIndex = currentFrameIndex;
   }
-
+  
   if (frameTimes.length > 0 && spikeTimes.length > 0 && rbposData.length > 0) {
     updateSpikes();
+    updateSpikeEmphasis();
     updateRigidBody();
   }
-
+  
   renderer.render(scene, camera);
 }
 
