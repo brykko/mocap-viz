@@ -419,7 +419,7 @@ function updateSpikes() {
       // const rbPos = rbposData[rbIndex] || { x: 0, y: 0, z: 0 };
       const spikeDot = new THREE.Mesh(
         new THREE.SphereGeometry(0.016, 8, 8),
-        new THREE.MeshPhongMaterial({ color: neuronColors[neuronId], shininess: 0 })
+        new THREE.MeshPhongMaterial({ color: neuronColors[neuronId], shininess: 50 })
         // new THREE.MeshBasicMaterial({ color: neuronColors[neuronId] })
       );
       spikeDot.position.set(
