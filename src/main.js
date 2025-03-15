@@ -8,22 +8,13 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 
 // Playback controls via dat.GUI.
 const playbackControls = {
-  restart: function() {
-    currentSample = 0;
-    spikeIndex = 0;
-    if (spikeGroup.clear) {
-      spikeGroup.clear();
-    } else {
-      while (spikeGroup.children.length > 0) {
-        spikeGroup.remove(spikeGroup.children[0]);
-      }
-    }
-  },
+  restart: restartAnimation,
   playbackSpeed: 1.0,
 };
 
 const DITHER_AMOUNT = 0.05;
 const SHOW_FOV_CONES = true;
+const LOOP_PLAYBACK = true;
 
 const gui = new dat.GUI();
 gui.add(playbackControls, 'restart').name('Restart Animation');
@@ -43,8 +34,8 @@ SELECTED_NEURONS.forEach((id, i) => {
 let scene, camera, renderer, controls;
 let markers = [];           // Spheres for each marker.
 let markerData = [];        // 8 arrays, one per marker.
-let currentSample = 0;
-let lastSampleIndex = 0;
+let currentSample = 0;      // global frame counter
+let lastSampleIndex = 0;    // used within animate() only
 const maxTrailLength = 240;
 
 // Spike and rigid-body data.
@@ -64,6 +55,20 @@ let rbTrailCount = 0;
 // Connection lines.
 let backLine1, backLine2;   // Fat lines for back marker connections.
 let rbConnLines;            // Fat line segments for rigid-body marker connections.
+
+function restartAnimation() {
+  currentSample = 0;
+  spikeIndex = 0;
+  lastSampleIndex = 0;
+  rbTrailCount = 0;
+  if (spikeGroup.clear) {
+    spikeGroup.clear();
+  } else {
+    while (spikeGroup.children.length > 0) {
+      spikeGroup.remove(spikeGroup.children[0]);
+    }
+  }
+}
 
 // ----- New: Create a FOV cone with graded (inverse-square) falloff -----
 function createFOVCone(fov, height) {
@@ -117,30 +122,6 @@ function createFOVCone(fov, height) {
   
   return new THREE.Mesh(geometry, material);
 }
-
-// function createFOVCone(fov, height) {
-//   // Compute base radius.
-//   const radius = height * Math.tan(THREE.MathUtils.degToRad(fov / 2));
-  
-//   // Create a cone geometry.
-//   // The 'openEnded' flag is set to true so there's no cap on the cone.
-//   const geometry = new THREE.ConeGeometry(radius, height, 32, 1, true);
-  
-//   // Move the geometry so that the tip is at the origin.
-//   geometry.translate(0, -height / 2, 0);
-  
-//   // Create a material that fades toward the tip.
-//   // Optionally you could create a custom ShaderMaterial for a smoother gradient.
-//   const material = new THREE.MeshBasicMaterial({
-//     color: 0xffffaa,
-//     transparent: true,
-//     opacity: 0.2,
-//     side: THREE.DoubleSide,
-//     depthWrite: false
-//   });
-  
-//   return new THREE.Mesh(geometry, material);
-// }
 
 // --- Add Camera Icons (unchanged) ---
 function addCameraIcons() {
@@ -339,7 +320,7 @@ function onWindowResize() {
 function updateMarkersAndConnections() {
   markers.forEach((marker, i) => {
     const data = markerData[i];
-    const sampleIndex = Math.floor(currentSample) % data.length;
+    const sampleIndex = Math.floor(currentSample);
     const pos = data[sampleIndex];
     marker.position.set(pos.x, pos.y, pos.z);
   });
@@ -373,7 +354,7 @@ function updateMarkersAndConnections() {
 
 function updateRigidBody() {
   if (rbposData.length === 0) return;
-  const rbIndex = Math.floor(currentSample) % rbposData.length;
+  const rbIndex = Math.floor(currentSample);
   const rbPos = rbposData[rbIndex];
   rbSphere.position.set(rbPos.x, rbPos.y, rbPos.z);
 
@@ -415,16 +396,16 @@ function updateSpikes() {
   while (spikeIndex < spikeTimes.length && spikeTimes[spikeIndex] <= currentFrameTime) {
     const neuronId = spikeNeurons[spikeIndex];
     if (SELECTED_NEURONS.includes(neuronId)) {
-      const rbIndex = Math.floor(currentSample) % rbposData.length;
+      const rbIndex = Math.floor(currentSample);
       const rbPos = rbposData[rbIndex] || { x: 0, y: 0, z: 0 };
       const spikeDot = new THREE.Mesh(
         new THREE.SphereGeometry(0.008, 8, 8),
-        new THREE.MeshBasicMaterial({ color: neuronColors[neuronId] })
+        new THREE.MeshBasicMaterial({ color: neuronColors[neuronId], transparent: true, opacity: 0.5 })
       );
 
       spikeDot.position.set(
         rbPos.x + (Math.random() - 0.5) * DITHER_AMOUNT,
-        0.005 + (Math.random() - 0.5) * DITHER_AMOUNT,
+        0.005,
         rbPos.z + (Math.random() - 0.5) * DITHER_AMOUNT
       );
 
@@ -446,18 +427,23 @@ function animate() {
     // currentSample += Math.round(playbackControls.playbackSpeed);
     const delta = clock.getDelta();
     currentSample += delta * 120 * playbackControls.playbackSpeed;
-    const currentFrameIndex = Math.floor(currentSample) % markerData[0].length;
+    console.log("Current sample: ", currentSample)
+
+    let currentFrameIndex;
+    currentFrameIndex = Math.floor(currentSample) % markerData[0].length;
+
+    // Detect looping condition. This happens when local variable 
+    // "currentFrameIndex" loops back to the start
     if (currentFrameIndex < lastSampleIndex) {
-      if (spikeGroup.clear) {
-        spikeGroup.clear();
+      if (LOOP_PLAYBACK) {
+        console.log("Detecting looping condition: restarting!")
+          restartAnimation();
       } else {
-        while (spikeGroup.children.length > 0) {
-          spikeGroup.remove(spikeGroup.children[0]);
-        }
+          // Freeze animation at the final step
+          console.log("Detected end of data: freezing!")
+          currentFrameIndex = markerData[0].length - 1;
+          currentSample = currentFrameIndex;
       }
-      spikeIndex = 0;
-      currentSample = 0;
-      rbTrailCount = 0;
     }
     lastSampleIndex = currentFrameIndex;
   }
