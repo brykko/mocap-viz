@@ -35,10 +35,14 @@ SELECTED_NEURONS.forEach((id, i) => {
 let scene, camera, renderer, controls;
 let markers = [];           // Spheres for each marker.
 let markerData = [];        // 8 arrays, one per marker.
+const maxTrailLength = 240;
+
+// For tracking state
+// let deltaAccumulator = 0;
+const MAX_DELTA = 0.1; // Maximum delta to consider valid
+let lastSampleIndex = 0;    // used within animate() only
 let currentSample = 0;      // global frame counter
 let rbPos;                  // current rigid-body position
-let lastSampleIndex = 0;    // used within animate() only
-const maxTrailLength = 240;
 
 // Spike and rigid-body data.
 let frameTimes = [];
@@ -460,24 +464,30 @@ function updateSpikeEmphasis() {
 const clock = new THREE.Clock();
 
 function animate() {
+
   requestAnimationFrame(animate);
   controls.update();
   
-  if (markerData.length > 0) {
-    updateMarkersAndConnections();
-    const delta = clock.getDelta();
-    currentSample += delta * 120 * playbackControls.playbackSpeed;
-    let currentFrameIndex = Math.floor(currentSample) % markerData[0].length;
-    if (currentFrameIndex < lastSampleIndex) {
-      if (LOOP_PLAYBACK) {
-        restartAnimation();
-      } else {
-        currentFrameIndex = markerData[0].length - 1;
-        currentSample = currentFrameIndex;
-      }
-    }
-    lastSampleIndex = currentFrameIndex;
+  updateMarkersAndConnections();
+
+    // Only accumulate delta values that are reasonable.
+    // This effectively pauses the playback clock when the animation stops playing
+  let delta = clock.getDelta();
+  if (delta > MAX_DELTA) {
+    delta = 0;
   }
+  currentSample += delta * 120 * playbackControls.playbackSpeed;
+
+  let currentFrameIndex = Math.floor(currentSample) % markerData[0].length;
+  if (currentFrameIndex < lastSampleIndex) {
+    if (LOOP_PLAYBACK) {
+      restartAnimation();
+    } else {
+      currentFrameIndex = markerData[0].length - 1;
+      currentSample = currentFrameIndex;
+    }
+  }
+  lastSampleIndex = currentFrameIndex;
   
   if (frameTimes.length > 0 && spikeTimes.length > 0 && rbposData.length > 0) {
     updateRigidBody();
