@@ -175,6 +175,13 @@ function init() {
   document.body.appendChild(renderer.domElement);
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+
+  // lighting
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 100);
+  directionalLight.position.set(0, 1, 0); // light coming from above
+  scene.add(directionalLight);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambientLight);
   
   const planeGeo = new THREE.PlaneGeometry(1.5, 1.5, 10, 10);
   const planeMat = new THREE.MeshBasicMaterial({ color: 0x555555, wireframe: true });
@@ -412,7 +419,8 @@ function updateSpikes() {
       // const rbPos = rbposData[rbIndex] || { x: 0, y: 0, z: 0 };
       const spikeDot = new THREE.Mesh(
         new THREE.SphereGeometry(0.016, 8, 8),
-        new THREE.MeshBasicMaterial({ color: neuronColors[neuronId] })
+        new THREE.MeshPhongMaterial({ color: neuronColors[neuronId], shininess: 0 })
+        // new THREE.MeshBasicMaterial({ color: neuronColors[neuronId] })
       );
       spikeDot.position.set(
         rbPos.x + (Math.random() - 0.5) * DITHER_AMOUNT,
