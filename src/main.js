@@ -435,31 +435,38 @@ function updateSpikes() {
   }
 }
 
+const EMPHASIS_TIME = 5;
+
 function updateSpikeEmphasis() {
   const currentTime = clock.getElapsedTime();
   spikeGroup.children.forEach(spike => {
     const birthTime = spike.userData.birthTime || 0;
     const age = currentTime - birthTime;
-    if (age < 1) {
+    if (age < EMPHASIS_TIME) {
       const t = age; // t goes from 0 to 1 over one second
-      // Save the initial scale if not already stored.
+
+      // Store initial state data for each spike
+      // We use the initial scale to smoothly reduce the ball size during the first
+      // few time steps after creation.
+      //
+      // We also assign each ball with a random bounce decay factor, which makes
+      // the bounces look more natural 
       if (!spike.userData.initialScale) {
         spike.userData.initialScale = spike.scale.x;
+        spike.userData.bounceDecayRate = 2 + 2*(Math.random());
       }
       const initialScale = spike.userData.initialScale;
+
       // Linearly interpolate scale: final scale is half the initial.
-      const newScale = THREE.MathUtils.lerp(initialScale, initialScale * 0.5, t);
+      const newScale = THREE.MathUtils.lerp(initialScale, initialScale * 0.5, t/EMPHASIS_TIME);
       spike.scale.set(newScale, newScale, newScale);
 
       // "bounce" the spikes by applying a decaying oscillating function
       // to the vertical position. The initial value is the current RB position,
       // and it exponentially decays to a fixed height.
-      const bounce = rbPos.y * Math.exp(-3 * age) * Math.abs(Math.cos(12 * age));
+      const k = spike.userData.bounceDecayRate;
+      const bounce = rbPos.y * Math.exp(-k * age) * Math.abs(Math.cos(12 * age));
       spike.position.y = 0.005 + bounce;
-      
-      // Linearly interpolate opacity: from 1.0 to 0.5.
-      // const newOpacity = THREE.MathUtils.lerp(1.0, 0.5, t);
-      // spike.material.opacity = newOpacity;
     }
   });
 }
