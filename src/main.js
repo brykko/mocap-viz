@@ -17,6 +17,9 @@ const SHOW_FOV_CONES = true;
 const LOOP_PLAYBACK = false;
 const SHOW_TRAIL = false;
 
+const urlParams = new URLSearchParams(window.location.search);
+const transparentBg = Boolean(parseInt(urlParams.get("transparent"))) || false;
+
 const gui = new dat.GUI();
 gui.add(playbackControls, 'restart').name('Restart Animation');
 gui.add(playbackControls, 'playbackSpeed', 1, 10.0).name('Playback Speed');
@@ -166,10 +169,10 @@ function addCameraIcons() {
 // ----- Initialize Scene -----
 function init() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
+  // scene.background = new THREE.Color(0x000000);
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0.3, 1.2, 1.5);
-  renderer = new THREE.WebGLRenderer();
+  renderer = new THREE.WebGLRenderer({alpha: transparentBg});
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
   document.body.appendChild(renderer.domElement);
